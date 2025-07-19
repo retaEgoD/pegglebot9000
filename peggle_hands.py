@@ -27,7 +27,6 @@ class PeggleHands:
         try:
             window_name = 'Peggle Deluxe 1.01' if not is_nights else 'Peggle Nights Deluxe 1.0'
             self.peg_window = pygetwindow.getWindowsWithTitle(window_name)[0]
-            self.get_board_corner()
             logging.info(f"Window found at {self.peg_window.topleft}.")
         except IndexError:
             print("Error while retrieving window details: No Peggle instance is open.")
@@ -57,7 +56,7 @@ class PeggleHands:
         """
         x, y = self.get_peggle_window_corner()
         width, height = self.get_window_dimensions()
-        return x + int(width*0.1), y + int(height*0.12)
+        return x + int(width*0.095), y + int(height*0.12)
     
 
     def get_window_dimensions(self):
@@ -73,13 +72,13 @@ class PeggleHands:
     def get_board_dimensions(self):
         """
         Returns the dimensions of the game board.
-        Board size is approx 80% of the game window. Height needs extra 6% to see the ball bucket.
+        Board size is approx 81% of the game window. Height needs extra 6% to see the ball bucket.
 
         Returns:
             tuple: A tuple containing the width and height of the game board.
         """
         width, height = self.get_window_dimensions()
-        return int(width*0.8), int(height*0.87)
+        return int(width*0.81), int(height*0.87)
     
     
     def restore_game_window(self):
@@ -127,16 +126,16 @@ class PeggleHands:
         return np.array(screenshot)
         
     
-    def shoot(self, x, y):
+    def click(self, x, y):
         """
-        Shoots a peg at the specified coordinates on the game board.
+        Clicks (and shoots at) a peg at the specified coordinates on the game board.
         The coordinates are relative to the game board corner.
 
         Args:
             x (int): The x-coordinate of the target location.
             y (int): The y-coordinate of the target location.
         """
-        logging.info(f"Shooting peg at ({x}, {y}).")
+        logging.info(f"Clicking ({x}, {y}).")
         self.restore_game_window()
         
         board_x, board_y = self.get_board_corner()
