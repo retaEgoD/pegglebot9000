@@ -1,8 +1,10 @@
-from peggle_vision import PeggleVision
+import peggle_vision as pv
 from peggle_hands import PeggleHands
 from peggle_brain import PeggleBrain, PeggleNaive
 
 import time
+import logging
+import keyboard
 
 THRESHOLD = 0.8
 
@@ -15,51 +17,71 @@ class PegglePlayer:
     def __init__(self) -> None:
         pass
     
-    def play_naive(self):
+    def play_naive(self, autoplay=True, debug=False):
         interfacer = PeggleHands()
-        eyes = PeggleVision()
         brain = PeggleNaive()
         
-        screenshot = interfacer.get_board_screenshot()
         
-        while not eyes.check_game_end(screenshot):
-            
+        while autoplay:
             screenshot = interfacer.get_board_screenshot()
-            dimensions = interfacer.get_board_dimensions()
+            print("Starting new level...")
+            
+            while not pv.check_game_end(screenshot):
+                
+                screenshot = interfacer.get_board_screenshot()
+                            
+                if pv.check_ready_to_shoot(screenshot, debug=debug):
+                    try:
+                        locations = pv.get_peg_info(screenshot, debug=debug)
+                        shot_x, shot_y = brain.select_shot(locations)
+                        interfacer.click(shot_x, shot_y)
+                    except IndexError:
+                        logging.warning("No orange pegs found. Saving board data. Retrying...")
+                        pv.save_peg_screenshots(screenshot)
                         
-            if eyes.check_ready_to_shoot(dimensions, screenshot):
-                locations = eyes.get_peg_info(screenshot)
-                shot_x, shot_y = brain.select_shot(locations)
-                interfacer.shoot(shot_x, shot_y)
+                if keyboard.is_pressed('esc'):
+                    logging.info('ESC pressed. Exiting...')
+                    return
+                
+                if keyboard.is_pressed('s'):
+                    pv.save_peg_screenshots(screenshot)
+                    logging.info('Screenshot!')
+                        
+                time.sleep(2)
+
+            score = pv.get_score(screenshot)
+            print(f"Score: {score}")
             time.sleep(2)
-        score = eyes.get_score(screenshot)
-        print(score)
-        
+            
+            interfacer.click(315, 370) # TODO SHIT CODE CLEAN UP
+    
+    
+    
     def play_nn(self):
         interfacer = PeggleHands()
-        eyes = PeggleVision()
         brain = PeggleBrain().to("cuda")
         
         screenshot = interfacer.get_board_screenshot()
         
-        while not eyes.check_game_end(screenshot):
+        while not pv.check_game_end(screenshot):
             
             screenshot = interfacer.get_board_screenshot()
             dimensions = interfacer.get_board_dimensions()
                         
-            if eyes.check_ready_to_shoot(dimensions, screenshot):
-                orange_locations = eyes.get_peg_info(screenshot)
-                blue_locations = eyes.get_peg_info(screenshot, want_blue=True)
+            if pv.check_ready_to_shoot(dimensions, screenshot):
+                orange_locations = pv.get_peg_info(screenshot)
+                blue_locations = pv.get_peg_info(screenshot, want_blue=True)
                 shot_x, shot_y = brain.select_shot(orange_locations, blue_locations)
-                interfacer.shoot(shot_x, shot_y)
+                interfacer.click(shot_x, shot_y)
             time.sleep(2)
-        score = eyes.get_score(screenshot)
+        score = pv.get_score(screenshot)
         print(score)
 
         
 def main():
     player = PegglePlayer()
-    player.play_nn()
+    # player.play_naive(debug=True)
+    player.play_naive()
     
     
 
