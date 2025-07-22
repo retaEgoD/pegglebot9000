@@ -118,9 +118,5 @@ class PeggleNaive:
     
 
     def select_shot(self, locations):
-        try:
-            x, y = locations[0]
-            return (x + randint(-15, 15), y + randint(-15, 15))
-        except IndexError:
-            logging.warning("No orange pegs found. Shooting at (10, 10).")
-            return (10, 10)
+        x, y = locations[0]
+        return (x + randint(-15, 15), y + randint(-15, 15))

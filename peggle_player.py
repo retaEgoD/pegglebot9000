@@ -9,7 +9,7 @@ import keyboard
 THRESHOLD = 0.8
 
 
-# TODO needs to recognise bucket, error handling, read score, ball recognition is poor, exception handling
+# TODO exception handling
 
 
 class PegglePlayer:
@@ -80,8 +80,8 @@ class PegglePlayer:
         
 def main():
     player = PegglePlayer()
-    # player.play_naive(debug=True)
-    player.play_naive()
+    player.play_naive(debug=True)
+    # player.play_naive()
     
     
 

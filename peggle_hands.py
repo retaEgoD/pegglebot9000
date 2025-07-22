@@ -56,7 +56,7 @@ class PeggleHands:
         """
         x, y = self.get_peggle_window_corner()
         width, height = self.get_window_dimensions()
-        return x + int(width*0.095), y + int(height*0.12)
+        return x + int(width*0.1), y + int(height*0.13)
     
 
     def get_window_dimensions(self):
