@@ -4,28 +4,31 @@ import easyocr
 import logging
 from re import sub
 from datetime import datetime
+import os
 
 
 # Image templates
-BALL_TEMPLATE = cv2.cvtColor(cv2.imread('assets/shooting_ball.png'), cv2.COLOR_RGB2BGR)
-BALL_MASK = cv2.imread('assets/shooting_ball_mask.png')
-PEG_TEMPLATE = cv2.imread('assets/OrangePeg.png')
-PEG_MASK = cv2.imread('assets/Peg_mask.png')
-BUCKET_TEMPLATE = cv2.cvtColor(cv2.imread('assets/CatcherA.png'), cv2.COLOR_RGB2BGR)
-WIN_TEMPLATE = cv2.cvtColor(cv2.imread('assets/win.png'), cv2.COLOR_RGB2BGR)
-FAIL_TEMPLATE = cv2.cvtColor(cv2.imread('assets/fail.png'), cv2.COLOR_RGB2BGR)
+BALL_TEMPLATE_PATH = "assets/shooting_ball.png"
+BALL_MASK_PATH = 'assets/shooting_ball_mask.png'
+PEG_TEMPLATE_PATH = 'assets/orange_peg.png'
+PEG_MASK_PATH = 'assets/peg_mask.png'
+BRICK_TEMPLATE_PATH = 'assets/orange_brick.png'
+BUCKET_TEMPLATE_PATH = 'assets/CatcherA.png'
+WIN_TEMPLATE_PATH = 'assets/win.png'
+FAIL_TEMPLATE_PATH = 'assets/fail.png'
 
 DEBUG_SCREENSHOT_FOLDER = 'screenshots'
 
 # HSV colour bounds. Format is lower bound, upper bound.
-PEG_BOUNDS = { "orange": (np.array([0, 150, 150]), np.array([5, 255, 255])), 
-                "blue": (np.array([226, 83, 42]), np.array([5, 255, 255])),
-                "green": (np.array([0, 0, 0]), np.array([0, 0, 0])),
-                "purple": (np.array([0, 0, 0]), np.array([0, 0, 0]))
+PEG_BOUNDS = { "orange": (np.array([0, 50, 50]), np.array([15, 255, 255])), 
+                "blue": (np.array([103, 50, 50]), np.array([123, 255, 255])),
+                "green": (np.array([50, 50, 50]), np.array([70, 255, 255])),
+                "purple": (np.array([144, 50, 50]), np.array([164, 255, 255]))
               }
 
 # Template match thresholds
-PEG_THRESHOLD = 0.60
+PEG_THRESHOLD = 0.55
+BRICK_THRESHOLD = 0.3
 BALL_THRESHOLD = 0.65
 BUCKET_THRESHOLD = 0.65
 GAME_END_THRESHOLD = 0.99
@@ -33,29 +36,55 @@ GAME_END_THRESHOLD = 0.99
 # Histogram comparison threshold
 HIST_THRESHOLD = 3
 
-#TODO Add thresholds and detection for all peg colours. Add brick detection. Throw error when shoot check has empty matches.
+#TODO Add brick detection. Throw error when shoot check has empty matches. Update board screenshot function.
+# Vision is finding it difficult to detect pegs near wall. Orange borders are also interfering with the orange detection.
+
+
+def load_image(path):
+    """
+    Loads an image from an asset path.
+
+    Args:
+        path (String): The relative path to the asset.
+
+    Returns:
+        NumPy array: The image as a NumPy array.
+    """
+    abs_path = os.path.join(os.path.dirname(__file__), path) 
+    img = cv2.cvtColor(cv2.imread(abs_path), cv2.COLOR_RGB2BGR)
+    return img
 
 
 def convert_mask_to_greyscale(mask):
-        """
-        Prepares mask for masking by applying threshold and greyscaling.
+    """
+    Prepares mask for masking by applying threshold and greyscaling.
 
-        Args:
-            mask (NumPy Array): Representation of mask as a NumPy array.
+    Args:
+        mask (NumPy Array): Representation of mask as a NumPy array.
 
-        Returns:
-            NumPy Array: The prepared mask.
-        """
-        return cv2.cvtColor(cv2.threshold(mask, 125, 255, cv2.THRESH_BINARY)[1], cv2.COLOR_RGB2GRAY)
+    Returns:
+        NumPy Array: The prepared mask.
+    """
+    return cv2.cvtColor(cv2.threshold(mask, 125, 255, cv2.THRESH_BINARY)[1], cv2.COLOR_RGB2GRAY)
 
 
-def create_portrait_mask(board_screenshot):
+def create_portrait_masked_board(board_screenshot):
+    """
+    Creates a mask to cover the portrait area of the game board.
+
+    Args:
+        board_screenshot (NumPy array): NumPy array of a screenshot of the game board.
+
+    Returns:
+        NumPy Array: A mask covering the portrait area of the board.
+    """
     board_x = board_screenshot.shape[1]
-    mask = np.zeros(board_screenshot.shape[:2], dtype=np.uint8)
+    mask = np.ones(board_screenshot.shape[:2], dtype=np.uint8)
     circle_centre = (board_x//2, 20)
     circle_radius = 105
-    cv2.circle(mask, center=circle_centre, radius=circle_radius, color=(255, 255, 255), thickness=-1)
-    return mask
+    cv2.circle(mask, center=circle_centre, radius=circle_radius, color=(0, 0, 0), thickness=-1)
+    masked_board = cv2.bitwise_and(board_screenshot, board_screenshot, mask=mask)
+    return masked_board
 
 
 def check_ready_to_shoot(board_screenshot, debug=False):
@@ -67,37 +96,28 @@ def check_ready_to_shoot(board_screenshot, debug=False):
         bool: True if the game is ready to shoot, False otherwise.
     """
     
+    ball_template = load_image(BALL_TEMPLATE_PATH)
+    ball_mask = load_image(BALL_MASK_PATH)
+    
     # STEP 1: Template match
+    
+    # Slice screenshot to portrait area    
     board_height, board_width = board_screenshot.shape[:2]
     pw, ph = (board_width//3), (board_height//4)
     py, px = 0, pw # Both x coordinate and portrait width are one third of the game board width.
-    portrait = board_screenshot[py:py+ph, px:px+pw] # Slice screenshot to portrait area
+    portrait = board_screenshot[py:py+ph, px:px+pw]
     
-    # # STEP 1: Template match
-    # portrait_mask = create_portrait_mask(board_screenshot)
-    # portrait = cv2.bitwise_and(board_screenshot, board_screenshot, mask=portrait_mask)
-    
-    # # Crop out black
-    # greyscale_portrait = cv2.cvtColor(portrait, cv2.COLOR_BGR2GRAY)
-    # _, portrait_threshold = cv2.threshold(greyscale_portrait, 0, 255, cv2.THRESH_OTSU)
-    # bounding_box = cv2.boundingRect(portrait_threshold)
-    # x, y, width, height = bounding_box
-    # portrait = portrait[y:y+height, x:x+width]
-    
-    
-    matches = cv2.matchTemplate(portrait, BALL_TEMPLATE, cv2.TM_CCOEFF_NORMED, None, mask=convert_mask_to_greyscale(BALL_MASK))
+    matches = cv2.matchTemplate(portrait, ball_template, cv2.TM_CCOEFF_NORMED, None, mask=convert_mask_to_greyscale(ball_mask))
     _, max_val, _, max_loc = cv2.minMaxLoc(matches, None)
     
     
     # STEP 2: Histogram comparison to original image
     
-    # Create hsv ball screenshots
-    hsv_ball = cv2.cvtColor(BALL_TEMPLATE, cv2.COLOR_BGR2HSV)
     
+    # Slice screenshot to just ball candidate
     ball_x, ball_y = max_loc
-    ball_height, ball_width = BALL_TEMPLATE.shape[:2]
-    ball_candidate = portrait[ball_y:ball_y+ball_height, ball_x:ball_x+ball_width] # Slice screenshot to just ball
-    hsv_ball_candidate = cv2.cvtColor(ball_candidate, cv2.COLOR_BGR2HSV)
+    ball_height, ball_width = ball_template.shape[:2]
+    ball_candidate = portrait[ball_y:ball_y+ball_height, ball_x:ball_x+ball_width] 
     
     # Set histogram settings
     h_bins = 50
@@ -110,7 +130,10 @@ def check_ready_to_shoot(board_screenshot, debug=False):
     
     channels = [0, 1] # H and S channels
     
-    ball_mask_greyscale = convert_mask_to_greyscale(BALL_MASK) # Greyscale necessary to work as a mask.
+    
+    hsv_ball = cv2.cvtColor(ball_template, cv2.COLOR_BGR2HSV)
+    hsv_ball_candidate = cv2.cvtColor(ball_candidate, cv2.COLOR_BGR2HSV)
+    ball_mask_greyscale = convert_mask_to_greyscale(ball_mask) # Greyscale necessary to work as a mask.
     
     # Calculate histograms and compare
     hist_ball = cv2.calcHist([hsv_ball], channels, ball_mask_greyscale, hist_size, ranges, accumulate=False)
@@ -130,7 +153,7 @@ def check_ready_to_shoot(board_screenshot, debug=False):
     if debug:
         
         copy = portrait.copy()
-        cv2.rectangle(copy, (ball_x, ball_y), (ball_x + BALL_TEMPLATE.shape[1], ball_y + BALL_TEMPLATE.shape[0]), (0, 255, 0), 2)
+        cv2.rectangle(copy, (ball_x, ball_y), (ball_x + ball_template.shape[1], ball_y + ball_template.shape[0]), (0, 255, 0), 2)
             
         cv2.imshow('Ball', copy)
         cv2.waitKey(0)
@@ -139,21 +162,35 @@ def check_ready_to_shoot(board_screenshot, debug=False):
     return (max_val >= BALL_THRESHOLD) and (hist_comparison >= HIST_THRESHOLD)
 
 
-def find_pegs(board_screenshot, debug=False):
+def find_pegs(board_screenshot, bricks, debug=False):
+    """
+    Locates the coordinates of all pegs on the board using template matching.
+
+    Args:
+        board_screenshot (NumPy array): NumPy array of a screenshot of the game board.
+        debug (bool, optional): Whether or not to use debug mode. Defaults to False.
+
+    Returns:
+        List: x, y coordinates of all pegs on the baord.
+    """
     
-    # Hide portrait to prevent false positives.
-    inverted_portrait_mask = cv2.bitwise_not(create_portrait_mask(board_screenshot))
-    portrait_masked_board = cv2.bitwise_and(board_screenshot, board_screenshot, mask=inverted_portrait_mask)
+    brick_template = load_image(BRICK_TEMPLATE_PATH)
+    peg_template = load_image(PEG_TEMPLATE_PATH)
+    peg_mask = load_image(PEG_MASK_PATH)
     
     # Generate coordinates for pegs
-    matches = cv2.matchTemplate(portrait_masked_board, PEG_TEMPLATE, cv2.TM_CCOEFF_NORMED, None, mask=convert_mask_to_greyscale(PEG_MASK))
-    ys, xs = np.where(matches >= PEG_THRESHOLD)
+    if bricks:
+        matches = cv2.matchTemplate(board_screenshot, brick_template, cv2.TM_CCOEFF_NORMED, None, mask=None)
+        ys, xs = np.where(matches >= BRICK_THRESHOLD)
+    else:
+        matches = cv2.matchTemplate(board_screenshot, peg_template, cv2.TM_CCOEFF_NORMED, None, mask=convert_mask_to_greyscale(peg_mask))
+        ys, xs = np.where(matches >= PEG_THRESHOLD)
     coords = np.column_stack((ys, xs))
     
     
     if debug:
         copy = board_screenshot.copy()
-        peg_height, peg_width = PEG_TEMPLATE.shape[:2]
+        peg_height, peg_width = peg_template.shape[:2]
         for y, x in coords:
             cv2.rectangle(copy, (x, y), (x + peg_width, y + peg_height), (0, 255, 0), 2)
             
@@ -163,51 +200,76 @@ def find_pegs(board_screenshot, debug=False):
     return coords
 
 
-def classify_pegs(board_screenshot, locations, debug=False):
+def create_masked_screenshot(board_screenshot, locations, debug=False):
+    peg_mask = load_image(PEG_MASK_PATH)
     location_mask = np.zeros(board_screenshot.shape[:2], dtype=np.uint8)
-    peg_width, peg_height = PEG_MASK.shape[:2]
+    peg_width, peg_height = peg_mask.shape[:2]
     for y, x in locations:
-        location_mask[y:y+peg_height, x:x+peg_width] = convert_mask_to_greyscale(PEG_MASK)
-    
+        location_mask[y:y+peg_height, x:x+peg_width] = convert_mask_to_greyscale(peg_mask)
     location_masked_screenshot = cv2.bitwise_and(board_screenshot, board_screenshot, mask=location_mask)
-    
-    hsv_masked_screenshot = cv2.cvtColor(np.array(location_masked_screenshot), cv2.COLOR_RGB2HSV) # RGB??? BGR??
-    orange_lower_bound, orange_upper_bound = PEG_BOUNDS['orange']
-    colour_mask = cv2.inRange(hsv_masked_screenshot, orange_lower_bound, orange_upper_bound)
-    res = cv2.bitwise_and(board_screenshot, board_screenshot, mask=colour_mask)
     
     if debug:
         cv2.imshow('Location Mask', location_masked_screenshot)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
         
-        cv2.imshow('Pegs colour match', res)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-    return res
+    return location_masked_screenshot
+
+
+def classify_pegs(board_screenshot, location_masked_screenshot, debug=False):
+    
+    hsv_masked_screenshot = cv2.cvtColor(np.array(location_masked_screenshot), cv2.COLOR_RGB2HSV) # Not BGR??? Why does this work correctly?
+    colour_matched_screenshots = {}
+    for colour, (lower_bound, upper_bound) in PEG_BOUNDS.items():
+        colour_mask = cv2.inRange(hsv_masked_screenshot, lower_bound, upper_bound)
+        res = cv2.bitwise_and(board_screenshot, board_screenshot, mask=colour_mask)
+        colour_matched_screenshots[colour] = res
+    
+    if debug:
+        for colour, res in colour_matched_screenshots.items():
+            res = cv2.cvtColor(res, cv2.COLOR_BGR2RGB)
+            cv2.imshow(f'{colour} colour match', res)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+    return colour_matched_screenshots
 
 
 def get_peg_info(board_screenshot, debug=False):
-    peg_locations = find_pegs(board_screenshot, debug=debug)
-    masked_pegs = classify_pegs(board_screenshot, peg_locations, debug=debug)
+    # Hide portrait to prevent false positives.
+    portrait_masked_board = create_portrait_masked_board(board_screenshot)
+    # brick_coords = find_pegs(portrait_masked_board, True, debug=debug)
+    peg_coords = find_pegs(portrait_masked_board, False, debug=debug)
+    location_mask = create_masked_screenshot(portrait_masked_board, peg_coords, debug=debug)
+    masked_pegs = classify_pegs(portrait_masked_board, location_mask, debug=debug)
     
     # Peg location logic
-    y, x = np.where(np.any(masked_pegs, axis=2)) # Get locations of all pixels that have colour
+    y, x = np.where(np.any(masked_pegs['orange'], axis=2)) # Get locations of all pixels that have colour
     locations = list(zip(x, y))
     return locations
 
 
 def save_peg_screenshots(board_screenshot):
-    masked_pegs = find_pegs(board_screenshot)
+    """
+    Saves a screenshot of the current board state and a peg location masked board state.
+
+    Args:
+        board_screenshot (NumPy array): NumPy array of a screenshot of the game board.
+    """
+    portrait_masked_board = create_portrait_masked_board(board_screenshot)
+    peg_coords = find_pegs(portrait_masked_board)
+    location_mask = create_masked_screenshot(portrait_masked_board, peg_coords)
+    
     current_time = datetime.today().strftime('%Y-%m-%d %H.%M.%S')
     file_prefix = DEBUG_SCREENSHOT_FOLDER + '/' + current_time
     cv2.imwrite(file_prefix + ' Screenshot.png', board_screenshot)
-    cv2.imwrite(file_prefix + ' Masked.png', masked_pegs)
+    cv2.imwrite(file_prefix + ' Masked.png', location_mask)
     
 
 def get_bucket_position(board_screenshot):
-    bucket_height, bucket_width = BUCKET_TEMPLATE.shape[:2]
-    result = cv2.matchTemplate(board_screenshot, BUCKET_TEMPLATE, cv2.TM_CCOEFF_NORMED)
+    bucket_template = load_image(BUCKET_TEMPLATE_PATH)
+    
+    bucket_height, bucket_width = bucket_template.shape[:2]
+    result = cv2.matchTemplate(board_screenshot, bucket_template, cv2.TM_CCOEFF_NORMED)
     coords = np.where(result >= BUCKET_THRESHOLD)
     
     # Select first coordinate and get centre of bucket, precision isn't important.
@@ -224,9 +286,12 @@ def check_game_end(board_screenshot):
     Returns:
         boolean: True if the game has finished, False otherwise.
     """
+    win_template = load_image(WIN_TEMPLATE_PATH)
+    fail_template = load_image(FAIL_TEMPLATE_PATH)
+    
     # Find template matches
-    win_result = cv2.matchTemplate(board_screenshot, WIN_TEMPLATE, cv2.TM_CCOEFF_NORMED,)
-    fail_result = cv2.matchTemplate(board_screenshot, FAIL_TEMPLATE, cv2.TM_CCOEFF_NORMED,)
+    win_result = cv2.matchTemplate(board_screenshot, win_template, cv2.TM_CCOEFF_NORMED,)
+    fail_result = cv2.matchTemplate(board_screenshot, fail_template, cv2.TM_CCOEFF_NORMED,)
     
     # Check if game is finished.
     win_loc = np.where(win_result >= GAME_END_THRESHOLD)
